@@ -1,55 +1,46 @@
 package geotrellis.spark.io.cassandra
 
-import geotrellis.spark._
-import geotrellis.spark.io.index._
+import com.datastax.driver.core.ResultSet
 import geotrellis.raster._
+import geotrellis.spark._
+import geotrellis.spark.io._
+import geotrellis.spark.io.avro.{AvroEncoder, AvroRecordCodec, TupleCodec}
+import geotrellis.spark.io.index._
 import geotrellis.spark.utils._
 
-import org.apache.spark.SparkContext
+abstract class TileReader[K: AvroRecordCodec] {
 
-import scala.collection.JavaConversions._
-
-import com.datastax.driver.core.ResultSet
-
-import java.nio.ByteBuffer
-
-trait TileReader[Key] {
   def collectTile(
     layerId: LayerId,
-    kIndex: KeyIndex[Key],
+    kIndex: KeyIndex[K],
     tileTable: String,
-    key: Key
+    key: K
   )(implicit session: CassandraSession): ResultSet
-    
-  def read(
-    layerId: LayerId, 
-    cassandraLayerMetaData: CassandraLayerMetaData, 
-    index: KeyIndex[Key]
-  )(key: Key)(implicit session: CassandraSession): Tile = {
 
+  def read(
+    layerId: LayerId,
+    cassandraLayerMetaData: CassandraLayerMetaData,
+    index: KeyIndex[K]
+  )(key: K)(implicit session: CassandraSession): Tile = {
+
+    val readCodec = KryoWrapper(TupleCodec[K, Tile])
     val CassandraLayerMetaData(_, rasterMetaData, tileTable) = cassandraLayerMetaData
     val results = collectTile(layerId, index, tileTable, key)
 
     val size = results.getAvailableWithoutFetching
-    val value = 
+    val value =
       if (size == 0) {
-        sys.error(s"Tile with key $key not found for layer $layerId")
+        throw new TileNotFoundError(key, layerId)
       } else if (size > 1) {
-        sys.error(s"Multiple tiles found for $key for layer $layerId")
+        throw new CatalogError(s"Multiple tiles found for $key for layer $layerId")
       } else {
         results.one.getBytes("value")
       }
-    
+
     val byteArray = new Array[Byte](value.remaining)
     value.get(byteArray, 0, byteArray.length)
-    
-    val (_, tileBytes) = KryoSerializer.deserialize[(Key, Array[Byte])](ByteBuffer.wrap(byteArray))
-    
-    ArrayTile.fromBytes(
-      tileBytes,
-      rasterMetaData.cellType,
-      rasterMetaData.tileLayout.tileCols,
-      rasterMetaData.tileLayout.tileRows
-    )
+
+    val (_, tile) = AvroEncoder.fromBinary(byteArray)(readCodec.value)
+    tile
   }
 }

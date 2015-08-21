@@ -1,41 +1,26 @@
 package geotrellis.spark.io.cassandra
 
-import java.io.IOException
-
-import geotrellis.raster._
-import geotrellis.raster.io.json._
 import geotrellis.raster.histogram._
-
+import geotrellis.raster.io.json._
 import geotrellis.spark._
-
-import geotrellis.spark.testfiles._
 import geotrellis.spark.op.stats._
-
-import spray.json._
-import spray.json.DefaultJsonProtocol._
-import org.joda.time.DateTime
+import geotrellis.spark.testfiles._
 import org.scalatest._
-
-import org.apache.spark.{Logging, SparkConf}
-import com.datastax.spark.connector.cql.CassandraConnector
+import spray.json._
 
 class CassandraAttributeStoreSpec extends FunSpec
     with Matchers
     with TestFiles
     with TestEnvironment
     with OnlyIfCanRunSpark
-    with Logging
     with SharedEmbeddedCassandra {
 
   describe("Cassandra Attribute Catalog") {
     ifCanRunSpark {
 
       useCassandraConfig(Seq("another-cassandra.yaml"))
-      val host = getHost().getHostAddress
-      val rpcPort : Int = getRpcPort()
-      val nativePort : Int = getNativePort()
-
-      EmbeddedCassandra.withSession(host, rpcPort, nativePort, EmbeddedCassandra.GtCassandraTestKeyspace) { implicit session =>
+      val host = "127.0.0.1"
+      EmbeddedCassandra.withSession(host, EmbeddedCassandra.GtCassandraTestKeyspace) { implicit session =>
         val attribStore = new CassandraAttributeStore("attributes")
         val layerId = LayerId("test", 3)
         

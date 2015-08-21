@@ -2,47 +2,20 @@ package geotrellis.spark.io.accumulo.spatial
 
 import geotrellis.spark._
 import geotrellis.spark.io.accumulo._
+import geotrellis.spark.io.avro.{TupleCodec, AvroEncoder}
+import geotrellis.spark.io.avro.KeyCodecs._
 import geotrellis.spark.io.index._
 import geotrellis.spark.utils._
 import geotrellis.raster._
 
-import org.apache.hadoop.io.Text
-import org.apache.hadoop.mapreduce.Job
-
-import org.apache.accumulo.core.data.{Key, Mutation, Value, Range => ARange}
-import org.apache.accumulo.core.client.mapreduce.AccumuloOutputFormat
-import org.apache.accumulo.core.client.BatchWriterConfig
-
-import org.apache.spark.SparkContext
-import org.apache.spark.SparkContext._
+import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.spark.rdd.RDD
 
-import scala.collection.mutable
-
-import spire.syntax.cfor._
-
-import scala.collection.JavaConversions._
-
 object SpatialRasterRDDWriter extends RasterRDDWriter[SpatialKey] {
-  import geotrellis.spark.io.accumulo.stringToText
-    
-  def getSplits(
-    layerId: LayerId,
-    metaData: RasterMetaData,
-    keyBounds: KeyBounds[SpatialKey],
-    kIndex: KeyIndex[SpatialKey],
-    num: Int = 48
-  ): List[String] = {
-    val minIndex = kIndex.toIndex(keyBounds.minKey)
-    val maxIndex = kIndex.toIndex(keyBounds.maxKey)
-    val splitSize = (maxIndex - minIndex) / num
 
-    val splits = mutable.ListBuffer[String]()
-    cfor(minIndex)(_ < maxIndex, _ + splitSize) { i =>
-      splits += rowId(layerId, i + 1)
-    }
-    splits.toList
-  }
+  lazy val writeCodec = KryoWrapper(TupleCodec[SpatialKey, Tile])
+
+  def rowId(id: LayerId, index: Long): String  = spatial.rowId (id, index)
 
   def encode(
     layerId: LayerId,
@@ -53,10 +26,9 @@ object SpatialRasterRDDWriter extends RasterRDDWriter[SpatialKey] {
       new Key(rowId(id, index.toIndex(key)), id.name)
 
     raster
-      .sortBy{ case (key, _) => getKey(layerId, key) }
-      .map { case (key, tile) => {
-        val value = KryoSerializer.serialize[(SpatialKey, Array[Byte])](key, tile.toBytes)
+      .map { case tuple @ (key, _) =>
+        val value = AvroEncoder.toBinary(tuple)(writeCodec.value)
         getKey(layerId, key) -> new Value(value)
-      }}
+      }
   }
 }

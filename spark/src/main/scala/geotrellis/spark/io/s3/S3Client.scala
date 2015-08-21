@@ -1,7 +1,8 @@
 package geotrellis.spark.io.s3
 
-import com.amazonaws.auth.{AWSCredentials, AWSCredentialsProvider}
+import com.amazonaws.auth.{DefaultAWSCredentialsProviderChain, AWSCredentials, AWSCredentialsProvider}
 import java.io.{InputStream, ByteArrayInputStream, DataInputStream, ByteArrayOutputStream}
+import com.amazonaws.retry.PredefinedRetryPolicies
 import com.amazonaws.services.s3.model._
 import com.typesafe.scalalogging.slf4j._
 import scala.collection.JavaConverters._
@@ -58,16 +59,15 @@ trait S3Client extends LazyLogging {
 }
 
 object S3Client {
-  implicit class S3ObjectBytes(obj: S3Object) {
-    def toBytes: Array[Byte] = {
-      val is = obj.getObjectContent
-      val len = obj.getObjectMetadata.getContentLength.toInt
-      val bytes = new Array[Byte](len)
-      val read = is.read(bytes, 0, len)
-      is.close()
-      assert(read == len, s"$read bytes read, $len expected.")      
-      bytes
-    }
+  def default = {
+    val provider = new DefaultAWSCredentialsProviderChain()
+    val config = new com.amazonaws.ClientConfiguration
+    config.setMaxConnections(128)
+    config.setMaxErrorRetry(16)
+    config.setConnectionTimeout(100000)
+    config.setSocketTimeout(100000)
+    config.setRetryPolicy(PredefinedRetryPolicies.getDefaultRetryPolicyWithCustomMaxRetries(32))
+    new AmazonS3Client(provider, config)
   }
 }
 
@@ -78,7 +78,7 @@ class AmazonS3Client(credentials: AWSCredentials, config: ClientConfiguration) e
   def this(provider: AWSCredentialsProvider, config: ClientConfiguration) =
     this(provider.getCredentials, config)
 
-  val s3client = new com.amazonaws.services.s3.AmazonS3Client(credentials)
+  val s3client = new com.amazonaws.services.s3.AmazonS3Client(credentials, config)
 
   def listObjects(listObjectsRequest: ListObjectsRequest): ObjectListing = {
     s3client.listObjects(listObjectsRequest)

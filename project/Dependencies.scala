@@ -52,13 +52,13 @@ object Dependencies {
   val sprayHttpx    = "io.spray"        %% "spray-httpx"   % Version.spray
   val sprayJson     = "io.spray"        %% "spray-json"    % "1.3.1"
 
-  val apacheMath    = "org.apache.commons" % "commons-math3" % "3.2"
+  val apacheMath    = "org.apache.commons" % "commons-math3" % "3.5"
 
   val jettyWebapp   = "org.eclipse.jetty" % "jetty-webapp" % "8.1.0.RC4"
   val jerseyBundle  = "com.sun.jersey"    % "jersey-bundle" % "1.11"
   val slf4jApi      = "org.slf4j"         % "slf4j-api" % "1.6.0"
   val asm           = "asm"               % "asm"       % "3.3.1"
-  
+
   val slick         = "com.typesafe.slick" %% "slick"      % "2.1.0"
   val postgresql    = "postgresql"         % "postgresql"  % "9.1-901.jdbc4"
 
@@ -67,7 +67,12 @@ object Dependencies {
 
   val nscalaTime    = "com.github.nscala-time" %% "nscala-time" % "1.6.0"
 
-  val awsSdkS3      = "com.amazonaws" % "aws-java-sdk-s3" % "1.9.33"
+  val awsSdkS3      = "com.amazonaws" % "aws-java-sdk-s3" % "1.9.34"
 
   val scalazStream  = "org.scalaz.stream" %% "scalaz-stream" % "0.7a"
+
+  val sparkCore     = "org.apache.spark" %% "spark-core" % Version.spark
+  val hadoopClient  = "org.apache.hadoop" % "hadoop-client" % Version.hadoop
+
+  val avro          = "org.apache.avro" % "avro" % "1.7.7"
 }

@@ -17,9 +17,63 @@
 package geotrellis.vector
 
 import com.vividsolutions.jts.{geom => jts}
+import scala.reflect._
 
-abstract sealed trait GeometryResult
+private[vector] trait GeometryResultMethods { 
+  /** Returns this result as an option, unless this is NoResult, in which case it returns None */
+  def toGeometry(): Option[Geometry]
+
+  /** returns this result as the specified geometry type, unless it is not the correct geometry type or NoResult,
+    * in which case it returns None */
+  def as[G <: Geometry : ClassTag]: Option[G] =
+    toGeometry.flatMap { g =>
+      if(classTag[G].runtimeClass.isInstance(g)) Some(g.asInstanceOf[G])
+      else None
+    }
+
+  /** returns this result as a MultiPoint if it's a Point or MultiPoint, otherwise returns None */
+  def asMultiPoint: Option[MultiPoint] =
+    toGeometry.flatMap { g =>
+      g match {
+        case p: Point => Some(MultiPoint(p))
+        case mp: MultiPoint => Some(mp)
+        case _ => None
+      }
+    }
+
+  /** returns this result as a MultiLine if it's a Line or MultiLine, otherwise returns None */
+  def asMultiLine: Option[MultiLine] =
+    toGeometry.flatMap { g =>
+      g match {
+        case l: Line => Some(MultiLine(l))
+        case ml: MultiLine => Some(ml)
+        case _ => None
+      }
+    }
+
+  /** returns this result as a MultiPolygon if it's a Polygon or MultiPolygon, otherwise returns None */
+  def asMultiPolygon: Option[MultiPolygon] =
+    toGeometry.flatMap { g =>
+      g match {
+        case p: Polygon => Some(MultiPolygon(p))
+        case mp: MultiPolygon => Some(mp)
+        case _ => None
+      }
+    }
+
+  /** returns this result as a MultiPoint if it's a Point or MultiPoint, otherwise returns None */
+  def asGeometryCollection: GeometryCollection =
+    toGeometry match {
+      case Some(g) => GeometryCollection(Seq(g))
+      case None => GeometryCollection()
+    }
+}
+
+abstract sealed trait GeometryResult extends GeometryResultMethods
 object GeometryResult {
+  implicit def resultToGeometry(result: GeometryResult): Option[Geometry] =
+    result.toGeometry
+
   implicit def jtsToResult(geom: jts.Geometry): GeometryResult =
     geom match {
       case null => NoResult
@@ -38,7 +92,7 @@ object GeometryResult {
 
 // -- Intersection
 
-abstract sealed trait PointGeometryIntersectionResult
+abstract sealed trait PointGeometryIntersectionResult extends GeometryResultMethods
 object PointGeometryIntersectionResult {
   implicit def jtsToResult(geom: jts.Geometry): PointGeometryIntersectionResult =
     geom match {
@@ -49,7 +103,7 @@ object PointGeometryIntersectionResult {
     }
 }
 
-abstract sealed trait OneDimensionAtLeastOneDimensionIntersectionResult
+abstract sealed trait OneDimensionAtLeastOneDimensionIntersectionResult extends GeometryResultMethods
 object OneDimensionAtLeastOneDimensionIntersectionResult {
   implicit def jtsToResult(geom: jts.Geometry): OneDimensionAtLeastOneDimensionIntersectionResult =
     geom match {
@@ -64,7 +118,7 @@ object OneDimensionAtLeastOneDimensionIntersectionResult {
     }
 }
 
-abstract sealed trait TwoDimensionsTwoDimensionsIntersectionResult
+abstract sealed trait TwoDimensionsTwoDimensionsIntersectionResult extends GeometryResultMethods
 object TwoDimensionsTwoDimensionsIntersectionResult {
   implicit def jtsToResult(geom: jts.Geometry): TwoDimensionsTwoDimensionsIntersectionResult =
     geom match {
@@ -81,7 +135,7 @@ object TwoDimensionsTwoDimensionsIntersectionResult {
     }
 }
 
-abstract sealed trait MultiLineMultiLineIntersectionResult
+abstract sealed trait MultiLineMultiLineIntersectionResult extends GeometryResultMethods
 object MultiLineMultiLineIntersectionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineMultiLineIntersectionResult =
     geom match {
@@ -95,7 +149,7 @@ object MultiLineMultiLineIntersectionResult {
     }
 }
 
-abstract sealed trait MultiPointMultiPointIntersectionResult
+abstract sealed trait MultiPointMultiPointIntersectionResult extends GeometryResultMethods
 object MultiPointMultiPointIntersectionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiPointIntersectionResult =
     geom match {
@@ -107,7 +161,7 @@ object MultiPointMultiPointIntersectionResult {
     }
 }
 
-abstract sealed trait MultiPolygonMultiPolygonIntersectionResult
+abstract sealed trait MultiPolygonMultiPolygonIntersectionResult extends GeometryResultMethods
 object MultiPolygonMultiPolygonIntersectionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPolygonMultiPolygonIntersectionResult =
     geom match {
@@ -123,7 +177,7 @@ object MultiPolygonMultiPolygonIntersectionResult {
     }
 }
 
-abstract sealed trait MultiPointAtLeastOneDimensionIntersectionResult
+abstract sealed trait MultiPointAtLeastOneDimensionIntersectionResult extends GeometryResultMethods
 object MultiPointAtLeastOneDimensionIntersectionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointAtLeastOneDimensionIntersectionResult =
     geom match {
@@ -137,7 +191,7 @@ object MultiPointAtLeastOneDimensionIntersectionResult {
 
 // -- Union
 
-abstract sealed trait PointZeroDimensionsUnionResult
+abstract sealed trait PointZeroDimensionsUnionResult extends GeometryResultMethods
 object PointZeroDimensionsUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): PointZeroDimensionsUnionResult =
     geom match {
@@ -148,7 +202,7 @@ object PointZeroDimensionsUnionResult {
     }
 }
 
-abstract sealed trait MultiPointMultiPointUnionResult
+abstract sealed trait MultiPointMultiPointUnionResult extends GeometryResultMethods
 object MultiPointMultiPointUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiPointUnionResult =
     geom match {
@@ -160,7 +214,7 @@ object MultiPointMultiPointUnionResult {
     }
 }
 
-abstract sealed trait ZeroDimensionsLineUnionResult
+abstract sealed trait ZeroDimensionsLineUnionResult extends GeometryResultMethods
 object ZeroDimensionsLineUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): ZeroDimensionsLineUnionResult =
     geom match {
@@ -171,7 +225,7 @@ object ZeroDimensionsLineUnionResult {
     }
 }
 
-abstract sealed trait PointMultiLineUnionResult
+abstract sealed trait PointMultiLineUnionResult extends GeometryResultMethods
 object PointMultiLineUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): PointMultiLineUnionResult =
     geom match {
@@ -184,7 +238,7 @@ object PointMultiLineUnionResult {
     }
 }
 
-abstract sealed trait MultiPointMultiLineUnionResult
+abstract sealed trait MultiPointMultiLineUnionResult extends GeometryResultMethods
 object MultiPointMultiLineUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiLineUnionResult =
     geom match {
@@ -198,7 +252,7 @@ object MultiPointMultiLineUnionResult {
     }
 }
 
-abstract sealed trait LineOneDimensionUnionResult
+abstract sealed trait LineOneDimensionUnionResult extends GeometryResultMethods
 object LineOneDimensionUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): LineOneDimensionUnionResult =
     geom match {
@@ -209,7 +263,7 @@ object LineOneDimensionUnionResult {
     }
 }
 
-abstract sealed trait MultiLineMultiLineUnionResult
+abstract sealed trait MultiLineMultiLineUnionResult extends GeometryResultMethods
 object MultiLineMultiLineUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineMultiLineUnionResult =
     geom match {
@@ -221,7 +275,7 @@ object MultiLineMultiLineUnionResult {
     }
 }
 
-abstract sealed trait AtMostOneDimensionPolygonUnionResult
+abstract sealed trait AtMostOneDimensionPolygonUnionResult extends GeometryResultMethods
 object AtMostOneDimensionPolygonUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): AtMostOneDimensionPolygonUnionResult =
     geom match {
@@ -232,7 +286,7 @@ object AtMostOneDimensionPolygonUnionResult {
     }
 }
 
-abstract sealed trait TwoDimensionsTwoDimensionsUnionResult
+abstract sealed trait TwoDimensionsTwoDimensionsUnionResult extends GeometryResultMethods
 object TwoDimensionsTwoDimensionsUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): TwoDimensionsTwoDimensionsUnionResult =
     geom match {
@@ -243,7 +297,7 @@ object TwoDimensionsTwoDimensionsUnionResult {
     }
 }
 
-abstract sealed trait PointMultiPolygonUnionResult
+abstract sealed trait PointMultiPolygonUnionResult extends GeometryResultMethods
 object PointMultiPolygonUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): PointMultiPolygonUnionResult =
     geom match {
@@ -256,7 +310,7 @@ object PointMultiPolygonUnionResult {
     }
 }
 
-abstract sealed trait LineMultiPolygonUnionResult
+abstract sealed trait LineMultiPolygonUnionResult extends GeometryResultMethods
 object LineMultiPolygonUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): LineMultiPolygonUnionResult =
     geom match {
@@ -269,7 +323,7 @@ object LineMultiPolygonUnionResult {
     }
 }
 
-abstract sealed trait MultiPointMultiPolygonUnionResult
+abstract sealed trait MultiPointMultiPolygonUnionResult extends GeometryResultMethods
 object MultiPointMultiPolygonUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiPolygonUnionResult =
     geom match {
@@ -283,7 +337,7 @@ object MultiPointMultiPolygonUnionResult {
     }
 }
 
-abstract sealed trait MultiLineMultiPolygonUnionResult
+abstract sealed trait MultiLineMultiPolygonUnionResult extends GeometryResultMethods
 object MultiLineMultiPolygonUnionResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineMultiPolygonUnionResult =
     geom match {
@@ -299,7 +353,7 @@ object MultiLineMultiPolygonUnionResult {
 
 // -- Difference
 
-abstract sealed trait PointGeometryDifferenceResult
+abstract sealed trait PointGeometryDifferenceResult extends GeometryResultMethods
 object PointGeometryDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): PointGeometryDifferenceResult =
     geom match {
@@ -310,7 +364,7 @@ object PointGeometryDifferenceResult {
     }
 }
 
-abstract sealed trait LineAtLeastOneDimensionDifferenceResult
+abstract sealed trait LineAtLeastOneDimensionDifferenceResult extends GeometryResultMethods
 object LineAtLeastOneDimensionDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): LineAtLeastOneDimensionDifferenceResult =
     geom match {
@@ -322,7 +376,7 @@ object LineAtLeastOneDimensionDifferenceResult {
     }
 }
 
-abstract sealed trait PolygonAtMostOneDimensionDifferenceResult
+abstract sealed trait PolygonAtMostOneDimensionDifferenceResult extends GeometryResultMethods
 object PolygonAtMostOneDimensionDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): PolygonAtMostOneDimensionDifferenceResult =
     geom match {
@@ -332,7 +386,7 @@ object PolygonAtMostOneDimensionDifferenceResult {
     }
 }
 
-abstract sealed trait TwoDimensionsTwoDimensionsDifferenceResult
+abstract sealed trait TwoDimensionsTwoDimensionsDifferenceResult extends GeometryResultMethods
 object TwoDimensionsTwoDimensionsDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): TwoDimensionsTwoDimensionsDifferenceResult =
     geom match {
@@ -344,7 +398,7 @@ object TwoDimensionsTwoDimensionsDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPointGeometryDifferenceResult
+abstract sealed trait MultiPointGeometryDifferenceResult extends GeometryResultMethods
 object MultiPointGeometryDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointGeometryDifferenceResult =
     geom match {
@@ -356,7 +410,7 @@ object MultiPointGeometryDifferenceResult {
     }
 }
 
-abstract sealed trait MultiLineGeometryDifferenceResult
+abstract sealed trait MultiLineGeometryDifferenceResult extends GeometryResultMethods
 object MultiLineGeometryDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineGeometryDifferenceResult =
     geom match {
@@ -368,7 +422,7 @@ object MultiLineGeometryDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPolygonXDifferenceResult
+abstract sealed trait MultiPolygonXDifferenceResult extends GeometryResultMethods
 object MultiPolygonXDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPolygonXDifferenceResult =
     geom match {
@@ -379,7 +433,7 @@ object MultiPolygonXDifferenceResult {
 }
 
 
-abstract sealed trait MultiLineMultiLineDifferenceResult
+abstract sealed trait MultiLineMultiLineDifferenceResult extends GeometryResultMethods
 object MultiLineMultiLineDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineMultiLineDifferenceResult =
     geom match {
@@ -393,7 +447,7 @@ object MultiLineMultiLineDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPointMultiPointDifferenceResult
+abstract sealed trait MultiPointMultiPointDifferenceResult extends GeometryResultMethods
 object MultiPointMultiPointDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiPointDifferenceResult =
     geom match {
@@ -405,7 +459,7 @@ object MultiPointMultiPointDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPolygonMultiPolygonDifferenceResult
+abstract sealed trait MultiPolygonMultiPolygonDifferenceResult extends GeometryResultMethods
 object MultiPolygonMultiPolygonDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPolygonMultiPolygonDifferenceResult =
     geom match {
@@ -422,7 +476,7 @@ object MultiPolygonMultiPolygonDifferenceResult {
 }
 // -- Boundary
 
-abstract sealed trait OneDimensionBoundaryResult
+abstract sealed trait OneDimensionBoundaryResult extends GeometryResultMethods
 object OneDimensionBoundaryResult {
   implicit def jtsToResult(geom: jts.Geometry): OneDimensionBoundaryResult =
     geom match {
@@ -433,7 +487,7 @@ object OneDimensionBoundaryResult {
     }
 }
 
-abstract sealed trait PolygonBoundaryResult
+abstract sealed trait PolygonBoundaryResult extends GeometryResultMethods
 object PolygonBoundaryResult {
   implicit def jtsToResult(geom: jts.Geometry): PolygonBoundaryResult =
     geom match {
@@ -446,7 +500,7 @@ object PolygonBoundaryResult {
 
 // -- SymDifference
 
-abstract sealed trait PointPointSymDifferenceResult
+abstract sealed trait PointPointSymDifferenceResult extends GeometryResultMethods
 object PointPointSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): PointPointSymDifferenceResult =
     geom match {
@@ -458,7 +512,7 @@ object PointPointSymDifferenceResult {
     }
 }
 
-abstract sealed trait ZeroDimensionsMultiPointSymDifferenceResult
+abstract sealed trait ZeroDimensionsMultiPointSymDifferenceResult extends GeometryResultMethods
 object ZeroDimensionsMultiPointSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): ZeroDimensionsMultiPointSymDifferenceResult =
     geom match {
@@ -470,7 +524,7 @@ object ZeroDimensionsMultiPointSymDifferenceResult {
     }
 }
 
-abstract sealed trait ZeroDimensionsLineSymDifferenceResult
+abstract sealed trait ZeroDimensionsLineSymDifferenceResult extends GeometryResultMethods
 object ZeroDimensionsLineSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): ZeroDimensionsLineSymDifferenceResult =
     geom match {
@@ -481,7 +535,7 @@ object ZeroDimensionsLineSymDifferenceResult {
     }
 }
 
-abstract sealed trait PointMultiLineSymDifferenceResult
+abstract sealed trait PointMultiLineSymDifferenceResult extends GeometryResultMethods
 object PointMultiLineSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): PointMultiLineSymDifferenceResult =
     geom match {
@@ -494,7 +548,7 @@ object PointMultiLineSymDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPointMultiLineSymDifferenceResult
+abstract sealed trait MultiPointMultiLineSymDifferenceResult extends GeometryResultMethods
 object MultiPointMultiLineSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiLineSymDifferenceResult =
     geom match {
@@ -508,7 +562,7 @@ object MultiPointMultiLineSymDifferenceResult {
     }
 }
 
-abstract sealed trait PointMultiPolygonSymDifferenceResult
+abstract sealed trait PointMultiPolygonSymDifferenceResult extends GeometryResultMethods
 object PointMultiPolygonSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): PointMultiPolygonSymDifferenceResult =
     geom match {
@@ -521,7 +575,7 @@ object PointMultiPolygonSymDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPointMultiPolygonSymDifferenceResult
+abstract sealed trait MultiPointMultiPolygonSymDifferenceResult extends GeometryResultMethods
 object MultiPointMultiPolygonSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiPolygonSymDifferenceResult =
     geom match {
@@ -535,7 +589,7 @@ object MultiPointMultiPolygonSymDifferenceResult {
     }
 }
 
-abstract sealed trait OneDimensionOneDimensionSymDifferenceResult
+abstract sealed trait OneDimensionOneDimensionSymDifferenceResult extends GeometryResultMethods
 object OneDimensionOneDimensionSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): OneDimensionOneDimensionSymDifferenceResult =
     geom match {
@@ -547,7 +601,7 @@ object OneDimensionOneDimensionSymDifferenceResult {
     }
 }
 
-abstract sealed trait AtMostOneDimensionPolygonSymDifferenceResult
+abstract sealed trait AtMostOneDimensionPolygonSymDifferenceResult extends GeometryResultMethods
 object AtMostOneDimensionPolygonSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): AtMostOneDimensionPolygonSymDifferenceResult =
     geom match {
@@ -558,7 +612,7 @@ object AtMostOneDimensionPolygonSymDifferenceResult {
     }
 }
 
-abstract sealed trait LineMultiPolygonSymDifferenceResult
+abstract sealed trait LineMultiPolygonSymDifferenceResult extends GeometryResultMethods
 object LineMultiPolygonSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): LineMultiPolygonSymDifferenceResult =
     geom match {
@@ -571,7 +625,7 @@ object LineMultiPolygonSymDifferenceResult {
     }
 }
 
-abstract sealed trait MultiLineMultiPolygonSymDifferenceResult
+abstract sealed trait MultiLineMultiPolygonSymDifferenceResult extends GeometryResultMethods
 object MultiLineMultiPolygonSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineMultiPolygonSymDifferenceResult =
     geom match {
@@ -585,7 +639,7 @@ object MultiLineMultiPolygonSymDifferenceResult {
     }
 }
 
-abstract sealed trait TwoDimensionsTwoDimensionsSymDifferenceResult
+abstract sealed trait TwoDimensionsTwoDimensionsSymDifferenceResult extends GeometryResultMethods
 object TwoDimensionsTwoDimensionsSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): TwoDimensionsTwoDimensionsSymDifferenceResult =
     geom match {
@@ -597,7 +651,7 @@ object TwoDimensionsTwoDimensionsSymDifferenceResult {
     }
 }
 
-abstract sealed trait MultiLineMultiLineSymDifferenceResult
+abstract sealed trait MultiLineMultiLineSymDifferenceResult extends GeometryResultMethods
 object MultiLineMultiLineSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineMultiLineSymDifferenceResult =
     geom match {
@@ -611,7 +665,7 @@ object MultiLineMultiLineSymDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPointMultiPointSymDifferenceResult
+abstract sealed trait MultiPointMultiPointSymDifferenceResult extends GeometryResultMethods
 object MultiPointMultiPointSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPointMultiPointSymDifferenceResult =
     geom match {
@@ -623,7 +677,7 @@ object MultiPointMultiPointSymDifferenceResult {
     }
 }
 
-abstract sealed trait MultiPolygonMultiPolygonSymDifferenceResult
+abstract sealed trait MultiPolygonMultiPolygonSymDifferenceResult extends GeometryResultMethods
 object MultiPolygonMultiPolygonSymDifferenceResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiPolygonMultiPolygonSymDifferenceResult =
     geom match {
@@ -641,7 +695,7 @@ object MultiPolygonMultiPolygonSymDifferenceResult {
 
 
 // -- Misc.
-abstract sealed trait PointOrNoResult
+abstract sealed trait PointOrNoResult extends GeometryResultMethods
 object PointOrNoResult {
   implicit def jtsToResult(geom: jts.Geometry): PointOrNoResult =
     geom match {
@@ -684,7 +738,9 @@ case object NoResult extends GeometryResult
     with MultiPolygonMultiPolygonSymDifferenceResult
     with MultiLineMultiLineDifferenceResult
     with MultiPointMultiPointDifferenceResult
-    with MultiPolygonMultiPolygonDifferenceResult
+    with MultiPolygonMultiPolygonDifferenceResult {
+  def toGeometry(): Option[Geometry] = None
+}
 
 case class PointResult(geom: Point) extends GeometryResult
     with PointGeometryIntersectionResult
@@ -710,7 +766,9 @@ case class PointResult(geom: Point) extends GeometryResult
     with MultiLineMultiLineDifferenceResult
     with MultiPointMultiPointDifferenceResult
     with MultiPolygonMultiPolygonDifferenceResult
-    with PointOrNoResult
+    with PointOrNoResult {
+  def toGeometry(): Option[Geometry] = Some(geom)
+}
 
 case class LineResult(geom: Line) extends GeometryResult
     with OneDimensionAtLeastOneDimensionIntersectionResult
@@ -734,7 +792,9 @@ case class LineResult(geom: Line) extends GeometryResult
     with MultiLineMultiLineSymDifferenceResult
     with MultiPolygonMultiPolygonSymDifferenceResult
     with MultiLineMultiLineDifferenceResult
-    with MultiPolygonMultiPolygonDifferenceResult
+    with MultiPolygonMultiPolygonDifferenceResult {
+  def toGeometry(): Option[Geometry] = Some(geom)
+}
 
 object LineResult {
   implicit def jtsToResult(geom: jts.Geometry): LineResult =
@@ -763,7 +823,9 @@ case class PolygonResult(geom: Polygon) extends GeometryResult
     with MultiLineMultiPolygonSymDifferenceResult
     with MultiPolygonMultiPolygonIntersectionResult
     with MultiPolygonMultiPolygonSymDifferenceResult
-    with MultiPolygonMultiPolygonDifferenceResult
+    with MultiPolygonMultiPolygonDifferenceResult {
+  def toGeometry(): Option[Geometry] = Some(geom)
+}
 
 case class MultiPointResult(geom: MultiPoint) extends GeometryResult
     with TwoDimensionsTwoDimensionsIntersectionResult
@@ -787,7 +849,9 @@ case class MultiPointResult(geom: MultiPoint) extends GeometryResult
     with MultiPolygonMultiPolygonSymDifferenceResult
     with MultiLineMultiLineDifferenceResult
     with MultiPointMultiPointDifferenceResult
-    with MultiPolygonMultiPolygonDifferenceResult
+    with MultiPolygonMultiPolygonDifferenceResult {
+  def toGeometry(): Option[Geometry] = Some(geom)
+}
 
 case class MultiLineResult(geom: MultiLine) extends GeometryResult
     with TwoDimensionsTwoDimensionsIntersectionResult
@@ -809,7 +873,9 @@ case class MultiLineResult(geom: MultiLine) extends GeometryResult
     with MultiLineMultiLineSymDifferenceResult
     with MultiPolygonMultiPolygonSymDifferenceResult
     with MultiLineMultiLineDifferenceResult
-    with MultiPolygonMultiPolygonDifferenceResult
+    with MultiPolygonMultiPolygonDifferenceResult {
+  def toGeometry(): Option[Geometry] = Some(geom)
+}
 
 object MultiLineResult {
   implicit def jtsToResult(geom: jts.Geometry): MultiLineResult =
@@ -836,7 +902,9 @@ case class MultiPolygonResult(geom: MultiPolygon) extends GeometryResult
     with MultiLineMultiPolygonSymDifferenceResult
     with MultiPolygonMultiPolygonIntersectionResult
     with MultiPolygonMultiPolygonSymDifferenceResult
-    with MultiPolygonMultiPolygonDifferenceResult
+    with MultiPolygonMultiPolygonDifferenceResult {
+  def toGeometry(): Option[Geometry] = Some(geom)
+}
 
 case class GeometryCollectionResult(geom: GeometryCollection) extends GeometryResult
     with TwoDimensionsTwoDimensionsIntersectionResult
@@ -856,4 +924,6 @@ case class GeometryCollectionResult(geom: GeometryCollection) extends GeometryRe
     with MultiPointMultiLineSymDifferenceResult
     with MultiPointMultiPolygonSymDifferenceResult
     with MultiLineMultiPolygonUnionResult
-    with MultiLineMultiPolygonSymDifferenceResult
+    with MultiLineMultiPolygonSymDifferenceResult {
+  def toGeometry(): Option[Geometry] = Some(geom)
+}

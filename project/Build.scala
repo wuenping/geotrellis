@@ -68,6 +68,7 @@ object GeotrellisBuild extends Build {
     },
 
     publishArtifact in Test := false,
+    publishArtifact in (Compile, packageDoc) := false,
 
     pomIncludeRepository := { _ => false },
     licenses := Seq("Apache 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0.html")),
@@ -94,7 +95,7 @@ object GeotrellisBuild extends Build {
   )
 
   val defaultAssemblySettings =
-    assemblySettings ++
+    assemblySettings ++ net.virtualvoid.sbt.graph.Plugin.graphSettings ++
   Seq(
     test in assembly := {},
     mergeStrategy in assembly <<= (mergeStrategy in assembly) {
@@ -134,9 +135,13 @@ object GeotrellisBuild extends Build {
     libraryDependencies <++= scalaVersion {
       case "2.10.4" => Seq(
         "org.scala-lang" %  "scala-reflect" % "2.10.4",
-        "org.scalamacros" %% "quasiquotes" % "2.0.1")
+        "org.scalamacros" %% "quasiquotes" % "2.0.1",
+        "org.spire-math" %% "spire-macros" % "0.9.1"
+      )
       case "2.11.5" => Seq(
-        "org.scala-lang" %  "scala-reflect" % "2.11.5")
+        "org.scala-lang" %  "scala-reflect" % "2.11.5",
+        "org.spire-math" %% "spire-macros" % "0.9.1"
+      )
     },
     resolvers += Resolver.sonatypeRepo("snapshots")
   )
@@ -198,7 +203,10 @@ object GeotrellisBuild extends Build {
       parallelExecution := false,
       fork in test := false,
       javaOptions in run += "-Xmx2G",
-      scalacOptions in compile ++= Seq("-optimize"),
+      scalacOptions ++= Seq(
+        "-optimize",
+        "-language:experimental.macros"
+      ),
       addCompilerPlugin("org.scalamacros" % "paradise" % "2.0.1" cross CrossVersion.full),
       libraryDependencies ++= Seq(
         typesafeConfig,
@@ -327,8 +335,8 @@ object GeotrellisBuild extends Build {
         scalatest % "test"
       )
     ) ++
-  defaultAssemblySettings ++
-  net.virtualvoid.sbt.graph.Plugin.graphSettings
+  defaultAssemblySettings
+
 
   // Project: admin
   lazy val admin: Project =
@@ -357,7 +365,7 @@ object GeotrellisBuild extends Build {
   lazy val spark: Project =
     Project("spark", file("spark"))
       .settings(sparkSettings: _*)
-      .dependsOn(raster, gdal, index)
+      .dependsOn(raster, gdal)
 
   lazy val sparkSettings =
     Seq(
@@ -366,22 +374,22 @@ object GeotrellisBuild extends Build {
       parallelExecution in Test := false,
       javaOptions ++= List(
         "-Xmx8G",
-        "-XX:MaxPermSize=512m",
         s"-Djava.library.path=${Environment.javaGdalDir}",
         "-Dsun.io.serialization.extendedDebugInfo=true"
       ),
       libraryDependencies ++=
         Seq(
+          "org.apache.accumulo" % "accumulo-core" % Version.accumulo
+            exclude("org.jboss.netty", "netty")
+            exclude("org.apache.hadoop", "hadoop-client")
+            exclude("org.slf4j", "slf4j-api"),
           "org.apache.spark" %% "spark-core" % Version.spark % "provided",
-          "org.apache.spark" %% "spark-streaming" % Version.spark % "provided",
           "org.apache.hadoop" % "hadoop-client" % Version.hadoop % "provided",
-          "com.quantifind" %% "sumac" % "0.3.0",
-          "org.apache.accumulo" % "accumulo-core" % "1.5.2",
           "de.javakaffee" % "kryo-serializers" % "0.27",
           "com.datastax.spark" %% "spark-cassandra-connector" % Version.spark_cassandra_connector exclude("org.slf4j", "slf4j-api"),
           "com.datastax.cassandra" % "cassandra-driver-core" % Version.cassandra_connector,
           "com.google.uzaygezen" % "uzaygezen-core" % "0.2",
-          logging, awsSdkS3,
+          logging, awsSdkS3, avro,
           spire,
           monocleCore, monocleMacro,
           nscalaTime,
@@ -402,8 +410,24 @@ object GeotrellisBuild extends Build {
         import geotrellis.spark.tiling._
         """
     ) ++
-  defaultAssemblySettings ++
-  net.virtualvoid.sbt.graph.Plugin.graphSettings
+  defaultAssemblySettings
+
+
+  lazy val sparkEtl =
+    Project(id = "spark-etl", base = file("spark-etl"))
+      .dependsOn(spark)
+      .settings(defaultAssemblySettings: _*)
+      .settings(
+        name := "geotrellis-spark-etl",
+        libraryDependencies ++= Seq(
+          "com.google.inject" % "guice" % "3.0",
+          "com.google.inject.extensions" % "guice-multibindings" % "3.0",
+          "org.rogach" %% "scallop" % "0.9.5",
+          logging,
+          sparkCore % "provided"
+        )
+      )
+
 
   lazy val graph: Project =
     Project("graph", file("graph"))
@@ -429,8 +453,7 @@ object GeotrellisBuild extends Build {
         "Cloudera Repo" at "https://repository.cloudera.com/artifactory/cloudera-repos"
       )
     ) ++
-  defaultAssemblySettings ++
-  net.virtualvoid.sbt.graph.Plugin.graphSettings
+  defaultAssemblySettings
 
 
   // Project: index
@@ -462,7 +485,7 @@ object GeotrellisBuild extends Build {
       libraryDependencies ++=
         Seq(
           "org.gdal"         % "gdal"       % "1.10.1",
-          "com.github.scopt" % "scopt_2.10" % "3.2.0",
+          "com.github.scopt" %% "scopt" % "3.3.0",
           scalatest % "test"
         ),
       resolvers ++=

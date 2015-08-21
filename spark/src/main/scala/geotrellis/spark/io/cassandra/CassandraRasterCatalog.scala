@@ -1,18 +1,15 @@
 package geotrellis.spark.io.cassandra
 
+import com.typesafe.config.ConfigFactory
+import geotrellis.raster._
 import geotrellis.spark._
 import geotrellis.spark.io._
-import geotrellis.spark.io.json._
 import geotrellis.spark.io.index._
-import geotrellis.spark.op.stats._
-import geotrellis.raster._
-
+import geotrellis.spark.io.json._
 import org.apache.spark.SparkContext
-
-import com.typesafe.config.{ConfigFactory,Config}
+import spray.json._
 
 import scala.reflect._
-import spray.json._
 
 object CassandraRasterCatalog {
   def apply()(implicit session: CassandraSession, sc: SparkContext): CassandraRasterCatalog = {
@@ -28,34 +25,45 @@ object CassandraRasterCatalog {
 }
 
 class CassandraRasterCatalog(
-  attributeStore: CassandraAttributeStore
-)(implicit session: CassandraSession, sc: SparkContext) {
-  
-  def reader[K: RasterRDDReader: JsonFormat: ClassTag](): FilterableRasterRDDReader[K] = 
-    new FilterableRasterRDDReader[K] {
-      def read(layerId: LayerId, filterSet: FilterSet[K]): RasterRDD[K] = {
-        val metaData = attributeStore.read[CassandraLayerMetaData](layerId, "metadata")
-        val keyBounds = attributeStore.read[KeyBounds[K]](layerId, "keyBounds")
-        val index = attributeStore.read[KeyIndex[K]](layerId, "keyIndex")
-        implicitly[RasterRDDReader[K]].read(metaData, keyBounds, index)(layerId, filterSet)
-      }
-    }
+  val attributeStore: CassandraAttributeStore
+)(implicit session: CassandraSession, sc: SparkContext) extends AttributeCaching[CassandraLayerMetaData] {
 
-  def writer[K: SpatialComponent: RasterRDDWriter: Boundable: JsonFormat: Ordering: ClassTag](keyIndexMethod: KeyIndexMethod[K], tileTable: String): Writer[LayerId, RasterRDD[K]] = {
+  def read[K: RasterRDDReader: Boundable: JsonFormat: ClassTag](layerId: LayerId, query: RasterRDDQuery[K]): RasterRDD[K] = {
+    try {
+      val metadata  = attributeStore.read[CassandraLayerMetaData](layerId, "metadata")
+      val keyBounds = attributeStore.read[KeyBounds[K]](layerId, "keyBounds")
+      val index     = attributeStore.read[KeyIndex[K]](layerId, "keyIndex")
+
+      implicitly[RasterRDDReader[K]]
+        .read(metadata, keyBounds, index)(layerId, query(metadata.rasterMetaData, keyBounds))
+    } catch {
+      case e: AttributeNotFoundError => throw new LayerNotFoundError(layerId)
+    }
+  }
+
+  def read[K: RasterRDDReader: Boundable: JsonFormat: ClassTag](layerId: LayerId): RasterRDD[K] =
+    query[K](layerId).toRDD
+
+  def query[K: RasterRDDReader: Boundable: JsonFormat: ClassTag](layerId: LayerId): BoundRasterRDDQuery[K] =
+    new BoundRasterRDDQuery[K](new RasterRDDQuery[K], read[K](layerId, _))
+
+  def writer[K: SpatialComponent: RasterRDDWriter: Boundable: JsonFormat: Ordering: ClassTag](
+    keyIndexMethod: KeyIndexMethod[K],
+    tileTable: String
+  ): Writer[LayerId, RasterRDD[K]] = {
     new Writer[LayerId, RasterRDD[K]] {
       def write(layerId: LayerId, rdd: RasterRDD[K]): Unit = {
-        // Persist since we are both calculating a histogram and saving tiles.
         rdd.persist()
 
-        val md = 
+        val md =
           CassandraLayerMetaData(
             rasterMetaData = rdd.metaData,
             keyClass = classTag[K].toString,
             tileTable = tileTable
           )
 
-        val keyBounds = rdd.keyBounds
-        
+        val keyBounds =  implicitly[Boundable[K]].getKeyBounds(rdd)
+
         val index = {
           val indexKeyBounds = {
             val imin = keyBounds.minKey.updateSpatialComponent(SpatialKey(0, 0))
@@ -69,19 +77,23 @@ class CassandraRasterCatalog(
         attributeStore.write[KeyBounds[K]](layerId, "keyBounds", keyBounds)
         attributeStore.write(layerId, "keyIndex", index)
 
-        val rddWriter = 
-          implicitly[RasterRDDWriter[K]]
-            .write(md, keyBounds, index)(layerId, rdd)
+        val rddWriter = implicitly[RasterRDDWriter[K]]
+        rddWriter.write(md, keyBounds, index)(layerId, rdd)
 
         rdd.unpersist(blocking = false)
       }
     }
   }
 
-  def readTile[K: TileReader: JsonFormat: ClassTag](layerId: LayerId): K => Tile = {
-    val cassandraLayerMetaData = attributeStore.read[CassandraLayerMetaData](layerId, "metadata")
-    val keyBounds = attributeStore.read[KeyBounds[K]](layerId, "keyBounds")
-    val index = attributeStore.read[KeyIndex[K]](layerId, "keyIndex")
-    implicitly[TileReader[K]].read(layerId, cassandraLayerMetaData, index)(_)
+  def tileReader[K: TileReader: JsonFormat: ClassTag](layerId: LayerId): Reader[K, Tile] =
+    new Reader[K, Tile] {
+      val readTile = {
+        val metadata = attributeStore.read[CassandraLayerMetaData](layerId, "metadata")
+        val keyBounds = attributeStore.read[KeyBounds[K]](layerId, "keyBounds")
+        val index = attributeStore.read[KeyIndex[K]](layerId, "keyIndex")
+        implicitly[TileReader[K]].read(layerId, metadata, index)(_)
+      }
+
+      def read(key: K) = readTile(key)
   }
 }

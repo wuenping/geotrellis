@@ -1,48 +1,33 @@
 package geotrellis.spark.io.cassandra
 
-import java.io.IOException
-
+import com.github.nscala_time.time.Imports._
+import geotrellis.proj4.LatLng
 import geotrellis.raster._
-import geotrellis.vector._
-import geotrellis.spark
-
+import geotrellis.raster.op.local._
 import geotrellis.spark._
 import geotrellis.spark.ingest._
 import geotrellis.spark.io._
-import geotrellis.spark.io.index._
 import geotrellis.spark.io.hadoop._
-import geotrellis.spark.tiling._
-import geotrellis.raster.op.local._
-import geotrellis.spark.utils.SparkUtils
+import geotrellis.spark.io.index._
 import geotrellis.spark.testfiles._
-import geotrellis.proj4.LatLng
-
-import org.apache.spark._
-import org.apache.spark.rdd._
-import org.joda.time.DateTime
-import org.scalatest._
-import org.scalatest.Matchers._
-import org.apache.accumulo.core.client.security.tokens.PasswordToken
+import geotrellis.spark.tiling._
+import geotrellis.vector._
 import org.apache.hadoop.fs.Path
-
-import com.github.nscala_time.time.Imports._
+import org.scalatest._
 
 class CassandraRasterCatalogSpec extends FunSpec
     with RasterRDDMatchers
     with TestFiles
     with TestEnvironment
     with OnlyIfCanRunSpark
-    with Logging 
     with SharedEmbeddedCassandra {
 
   describe("Cassandra Raster Catalog with Spatial Rasters") {
     ifCanRunSpark { 
 
       useCassandraConfig(Seq("another-cassandra.yaml"))
-      val host = getHost().getHostAddress
-      val rpcPort : Int = getRpcPort()
-      val nativePort : Int = getNativePort()
-      EmbeddedCassandra.withSession(host, rpcPort, nativePort, EmbeddedCassandra.GtCassandraTestKeyspace) { implicit session =>
+      val host = "127.0.0.1"
+      EmbeddedCassandra.withSession(host, EmbeddedCassandra.GtCassandraTestKeyspace) { implicit session =>
 
         val allOnes = new Path(inputHome, "all-ones.tif")
         val source = sc.hadoopGeoTiffRDD(allOnes)
@@ -54,36 +39,39 @@ class CassandraRasterCatalogSpec extends FunSpec
         CassandraRasterCatalog()
 
         Ingest[ProjectedExtent, SpatialKey](source, LatLng, layoutScheme) { (onesRdd, level) =>
-
           val layerId = LayerId("ones", level.zoom)
 
           it("should succeed writing to a table") {
             catalog.writer[SpatialKey](RowMajorKeyIndexMethod, tableName).write(layerId, onesRdd)
           }
 
+          it("should know when layer exists"){
+            catalog.layerExists(LayerId("ones", level.zoom)) should be (true)
+            catalog.layerExists(LayerId("nope", 100)) should be (false)
+          }
 
           it("should load out saved tiles") {
-            val rdd = catalog.reader[SpatialKey].read(layerId)
+            val rdd = catalog.read[SpatialKey](layerId)
             rdd.count should be > 0l
           }
           
           it("should load out a single tile") {
-            val key = catalog.reader[SpatialKey].read(layerId).map(_._1).collect.head
-            val getTile = catalog.readTile[SpatialKey](layerId)
+            val key = catalog.query[SpatialKey](layerId).toRDD.map(_._1).collect.head
+            val getTile = catalog.tileReader[SpatialKey](layerId)
             val tile = getTile(key)
             (tile.cols, tile.rows) should be ((512, 512))
           }
+
           it("should load out saved tiles, but only for the right zoom") {
-            intercept[Attribute4LayerNotFoundError] {
-              catalog.reader[SpatialKey].read(LayerId("ones", level.zoom + 1)).count()
+            intercept[LayerNotFoundError] {
+              catalog.query[SpatialKey](LayerId("ones", level.zoom + 1)).toRDD.count()
             }
           }
 
           it("fetch a TileExtent from catalog") {
             val tileBounds = GridBounds(915,612,916,612)
-            val filters = new FilterSet[SpatialKey] withFilter SpaceFilter(tileBounds)
-            val rdd1 = catalog.reader[SpatialKey].read(LayerId("ones", level.zoom), filters)
-            val rdd2 = catalog.reader[SpatialKey].read(LayerId("ones", 10), filters)
+            val rdd1 = catalog.query[SpatialKey](LayerId("ones", level.zoom)).where(Intersects(tileBounds)).toRDD
+            val rdd2 = catalog.query[SpatialKey](LayerId("ones", 10)).where(Intersects(tileBounds)).toRDD
             
             val out = rdd1.combinePairs(rdd2) { case (tms1, tms2) =>
               require(tms1.id == tms2.id)
@@ -93,7 +81,19 @@ class CassandraRasterCatalogSpec extends FunSpec
 
             val tile = out.first.tile
             tile.get(115, 511) should be (2)
-          }      
+          }
+
+          it("can retreive all the metadata"){
+            val mds = catalog.attributeStore.readAll[CassandraLayerMetaData]("metadata")
+            info(mds(layerId).toString)
+          }
+
+          RasterRDDQueryTest.spatialTest_ones_ingested.foreach { test =>
+            it(test.name){
+              val rdd = catalog.read[SpatialKey](test.layerId.copy(zoom = level.zoom), test.query)
+              rdd.map(_._1).collect should contain theSameElementsAs test.expected
+            }
+          }
         }     
       }
     }
@@ -102,10 +102,8 @@ class CassandraRasterCatalogSpec extends FunSpec
   describe("Cassandra Raster Catalog with SpaceTime Rasters") {
     ifCanRunSpark {
       useCassandraConfig(Seq("another-cassandra.yaml"))
-      val host = getHost().getHostAddress
-      val rpcPort : Int = getRpcPort()
-      val nativePort : Int = getNativePort()
-      EmbeddedCassandra.withSession(host, rpcPort, nativePort, EmbeddedCassandra.GtCassandraTestKeyspace) { implicit session =>
+      val host = "127.0.0.1"
+      EmbeddedCassandra.withSession(host, EmbeddedCassandra.GtCassandraTestKeyspace) { implicit session =>
 
         val tableName = "spacetime_tiles"
         
@@ -120,20 +118,20 @@ class CassandraRasterCatalogSpec extends FunSpec
         }
         
         it("should load out saved tiles") {
-          val rdd = catalog.reader[SpaceTimeKey].read(layerId)
+          val rdd = catalog.read[SpaceTimeKey](layerId)
           rdd.count should be > 0l
         }
         
         it("should load out a single tile") {
-          val key = catalog.reader[SpaceTimeKey].read(layerId).map(_._1).collect.head
-          val getTile = catalog.readTile[SpaceTimeKey](layerId)
+          val key = catalog.read[SpaceTimeKey](layerId).map(_._1).collect.head
+          val getTile = catalog.tileReader[SpaceTimeKey](layerId)
           val tile = getTile(key)
           val actual = CoordinateSpaceTime.collect.toMap.apply(key)
           tilesEqual(tile, actual)
         }
         it("should load out saved tiles, but only for the right zoom") {
-          intercept[Attribute4LayerNotFoundError] {
-            catalog.reader[SpaceTimeKey].read(LayerId("coordinates", zoom + 1)).count()
+          intercept[LayerNotFoundError] {
+            catalog.read[SpaceTimeKey](LayerId("coordinates", zoom + 1)).count()
           }
         }
         
@@ -146,12 +144,11 @@ class CassandraRasterCatalogSpec extends FunSpec
           val (minRow, maxRow) = (rows.min, rows.max)
           
           val tileBounds = GridBounds(minCol + 1, minRow + 1, maxCol, maxRow)
-          
-          val filters = 
-            new FilterSet[SpaceTimeKey] 
-              .withFilter(SpaceFilter(tileBounds))
-          
-          val rdd = catalog.reader[SpaceTimeKey].read(LayerId("coordinates", zoom), filters)
+
+          val rdd = catalog
+            .query[SpaceTimeKey](LayerId("coordinates", zoom))
+            .where(Intersects(tileBounds))
+            .toRDD
           
           rdd.map(_._1).collect.foreach { case SpaceTimeKey(col, row, time) =>
             tileBounds.contains(col, row) should be (true)
@@ -169,13 +166,12 @@ class CassandraRasterCatalogSpec extends FunSpec
           val maxTime = times.max
           
           val tileBounds = GridBounds(minCol + 1, minRow + 1, maxCol, maxRow)
-          
-          val filters = 
-            new FilterSet[SpaceTimeKey] 
-              .withFilter(SpaceFilter(tileBounds))
-              .withFilter(TimeFilter(maxTime))
-          
-          val rdd = catalog.reader[SpaceTimeKey].read(LayerId("coordinates", zoom), filters)
+
+          val rdd = catalog
+            .query[SpaceTimeKey](LayerId("coordinates", zoom))
+            .where(Intersects(tileBounds))
+            .where(Between(maxTime,maxTime))
+            .toRDD
           
           rdd.map(_._1).collect.foreach { case SpaceTimeKey(col, row, time) =>
             tileBounds.contains(col, row) should be (true)

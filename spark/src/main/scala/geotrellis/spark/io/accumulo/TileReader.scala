@@ -1,21 +1,18 @@
 package geotrellis.spark.io.accumulo
 
 import geotrellis.spark._
+import geotrellis.spark.io._
+import geotrellis.spark.io.avro.{AvroRecordCodec, TupleCodec, AvroEncoder}
 import geotrellis.spark.io.index._
 import geotrellis.raster._
 import geotrellis.spark.utils._
-import geotrellis.spark.io.accumulo._
 
+import org.apache.accumulo.core.data.Value
 
-import org.apache.spark.SparkContext
-import org.apache.hadoop.io.Text
-import org.apache.accumulo.core.security.Authorizations
-import org.apache.accumulo.core.data.{Range => ARange, Value}
+abstract class TileReader[K: AvroRecordCodec] {
 
-import scala.collection.JavaConversions._
+  private lazy val readCodec = KryoWrapper(TupleCodec[K, Tile])
 
-
-trait TileReader[K] {
   def collectTile(
     instance: AccumuloInstance,
     layerId: LayerId,
@@ -30,24 +27,18 @@ trait TileReader[K] {
     accumuloLayerMetaData: AccumuloLayerMetaData,
     index: KeyIndex[K]
   )(key: K): Tile = {
-    val AccumuloLayerMetaData(_, rasterMetaData, tileTable) = accumuloLayerMetaData
+    val AccumuloLayerMetaData(_, _, tileTable) = accumuloLayerMetaData
     val values = collectTile(instance, layerId, index, tileTable, key)
     val value =
-      if(values.size == 0) {
-        sys.error(s"Tile with key $key not found for layer $layerId")
+      if(values.isEmpty) {
+        throw new TileNotFoundError(key, layerId)        
       } else if(values.size > 1) {
-        sys.error(s"Multiple tiles found for $key for layer $layerId")
+        throw new CatalogError(s"Multiple tiles found for $key for layer $layerId")
       } else {
         values.head
       }
 
-    val (_, tileBytes) = KryoSerializer.deserialize[(K, Array[Byte])](value.get)
-
-    ArrayTile.fromBytes(
-      tileBytes,
-      rasterMetaData.cellType,
-      rasterMetaData.tileLayout.tileCols,
-      rasterMetaData.tileLayout.tileRows
-    )
+    val (_, tile) = AvroEncoder.fromBinary(value.get)(readCodec.value)
+    tile
   }
 }

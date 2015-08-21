@@ -15,7 +15,7 @@ import scala.reflect.ClassTag
 import org.apache.hadoop.conf.Configuration
 
 class HadoopAttributeStore(hadoopConfiguration: Configuration, attributeDir: Path) extends AttributeStore {
-  type ReadableWritable[T] = RootJsonFormat[T]
+  type ReadableWritable[T] = JsonFormat[T]
 
   val fs = attributeDir.getFileSystem(hadoopConfiguration)
 
@@ -51,16 +51,16 @@ class HadoopAttributeStore(hadoopConfiguration: Configuration, attributeDir: Pat
   def read[T: ReadableWritable](layerId: LayerId, attributeName: String): T =
     readFile[T](attributePath(layerId, attributeName)) match {
       case Some((id, value)) => value
-      case None => throw new LayerNotFoundError(layerId)
+      case None => throw new AttributeNotFoundError(attributeName, layerId)
     }
 
-  def readAll[T: RootJsonFormat](attributeName: String): Map[LayerId,T] = {
+  def readAll[T: ReadableWritable](attributeName: String): Map[LayerId,T] = {
     HdfsUtils
       .listFiles( attributeWildcard(attributeName), hadoopConfiguration)    
       .map{ path: Path => 
         readFile[T](path) match {
           case Some(tup) => tup
-          case None => sys.error(s"Unable to read '$attributeName' attribute from $path")
+          case None => throw new CatalogError(s"Unable to list $attributeName attributes from $path") 
         }
       }
       .toMap

@@ -17,7 +17,7 @@
 package geotrellis.raster
 
 import geotrellis.vector.Extent
-import scala.math.{min, max, round, ceil, floor}
+import scala.math.{min, max, ceil}
 
 case class GeoAttrsError(msg: String) extends Exception(msg)
 
@@ -217,7 +217,7 @@ case class RasterExtent(extent: Extent, cellwidth: Double, cellheight: Double, c
     Extent(xmin, ymin, xmax, ymax)
   }
 
-  /** Adjusts a raster extent so that in can encompass the tile layout.
+  /** Adjusts a raster extent so that it can encompass the tile layout.
     * Will resample the extent, but keep the resolution, and preserve north and
     * west borders
     */
